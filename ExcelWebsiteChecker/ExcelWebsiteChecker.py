@@ -1,14 +1,22 @@
 from openpyxl import load_workbook
 import requests
 from threading import Thread
+from urllib.parse import urlparse
 
 INPUT_SPREADSHEET_NAME = "list.xlsx"
 OUTPUT_SPREADSHEET_NAME = "list_updated.xlsx"
 LOG_ERRORS_TO_OUTPUT = False
 
 def checkWebsite(threadName, website):
-    httpsWebAddress = "https://" + website.replace("https://","").replace("http://", "").replace("http//:","").replace("http:","") # Hack there are some malformed websites in the spreadsheet
-    #httpWebAddress = "http://" + website
+    parseOutput = urlparse(website)
+    httpsWebAddress = parseOutput.hostname
+    if parseOutput.path == website: # This happens if website does not have the http or https design
+        httpsWebAddress = "https://" + website
+    elif parseOutput.scheme == "http":
+        httpsWebAddress = "https://" + parseOutput.netloc
+    elif parseOutput.scheme == "https":
+        httpsWebAddress = parseOutput.scheme + "://" + parseOutput.netloc
+
     try:
         #print(threadName+"Attempting to hit website: " + httpsWebAddress)
         ret = requests.head(httpsWebAddress, timeout=5)
@@ -41,7 +49,7 @@ def checkSheet(threadName, sheet):
    
     firstRow = tuple(sheet.rows)[0]
     webAddressHeaderIndex = [item.value for item in firstRow].index("Web Address")
-    for index, row in enumerate(list(sheet.rows)[1:-1], start=2): # [1:-1] to skip header row and final row (because it will be empty), start=2 to have index start at 2 for enumeration
+    for index, row in enumerate(list(sheet.rows)[1:], start=2): # [1:] to skip header row, start=2 to have index start at 2 for enumeration
         website = row[webAddressHeaderIndex].value
         if website is None: # HACK - openpyxl was giving me issues where some rows at the end of a sheet, with nothing in them would be enumerated.
             print("WANRING FOUND A WEBSITE WITH 'NONE' VALUE Logging output: Sheet Name: "+sheet.title+" Current Row: "+str(row[0].row)+" Row Count: "+str(len(list(sheet.rows))))
@@ -57,10 +65,11 @@ print(workbook.sheetnames)
 threads = []
 for sheet in workbook:
     sheetName = sheet.title
+    if sheetName == "with Website":
     # One thread per sheet, with a unique name for logging
-    process = Thread(target=checkSheet, args=["##"+sheetName+"## ", sheet])
-    process.start()
-    threads.append(process)
+        process = Thread(target=checkSheet, args=["##"+sheetName+"## ", sheet])
+        process.start()
+        threads.append(process)
 
 # Wait for threads to complete
 for process in threads:
